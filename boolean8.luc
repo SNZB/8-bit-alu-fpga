@@ -1,0 +1,24 @@
+module boolean8 (
+    input clk,       // clock
+    input rst,       // reset
+    input a[8],      // 8-bit A0 - A7 inputs
+    input b[8],      // 8-bit B0 - B7 inputs
+    input alufn[4],  // ALUFN[3:0] signals
+    output boole[8]  // final 8-bit output
+  ) {
+  
+  always {
+    boole = 8b0;
+    
+    case (alufn) {
+      4b1000: boole = a & b;     // and operation
+      4b1110: boole = a | b;     // or operation
+      4b0110: boole = a ^ b;     // xor operation
+      4b0111: boole = ~(a & b);  // nand operation
+      4b0001: boole = ~(a | b);  // nor operation
+      4b1001: boole = ~(a ^ b);  // xnor operation
+      4b0101: boole = ~a;        // inverter 
+      4b1010: boole = a;         // ldr
+    }
+  }
+}

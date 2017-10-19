@@ -1,0 +1,45 @@
+module adder8 (
+    input clk,       // clock
+    input rst,       // reset
+    input a[8],      // 8-bit A0 - A7 inputs
+    input b[8],      // 8-bit B0 - B7 inputs
+    input alufn[2],  // ALUFN[0] signals
+    output s[8],     // final 8-bit output
+    output z,        // zero
+    output v,        // overflow
+    output n         // negative    
+  ) {
+  
+  sig xs[8];
+
+  always {
+    s = $signed(8b0);
+    z = 1b0;
+    v = 1b0;
+    n = 1b0;    
+    
+    case (alufn) {
+      // ADDITION
+      2b00:       
+        s = $signed(a) + $signed(b);
+        xs = $signed(a) + $signed(b);
+        z = ~(|xs); 
+        v = (a[7] && b[7] && ~(xs[7])) || (~(a[7]) && ~(b[7]) && xs[7]);
+        n = xs[7];
+      // SUBTRACTION 
+      2b01: 
+        s = $signed(a) - $signed(b);
+        xs = $signed(a) - $signed(b);
+        z = ~(|xs); 
+        v = (a[7] && ~b[7] && ~(xs[7])) || (~(a[7]) && (b[7]) && xs[7]);
+        n = xs[7];
+      // MULTIPLICATION              
+      2b10:
+        s = $signed(a) * $signed(b);
+        xs = $signed(a) * $signed(b);
+        z = ~(|xs); 
+        v = (a[7] && b[7] && ~xs[7]) || (~a[7] && ~b[7] && xs[7]);
+        n = xs[7];
+    }
+  }
+}

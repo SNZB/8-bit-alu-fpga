@@ -1,0 +1,457 @@
+module mojo_top (
+    input clk,              // 50MHz clock
+    input rst_n,            // reset button (active low)
+    output led[8],          // 8 user controllable LEDs
+    input cclk,             // configuration clock, AVR ready when high
+    output spi_miso,        // AVR SPI MISO
+    input spi_ss,           // AVR SPI Slave Select
+    input spi_mosi,         // AVR SPI MOSI
+    input spi_sck,          // AVR SPI Clock
+    output spi_channel[4],  // AVR general purpose pins (used by default to select ADC channel)
+    input avr_tx,           // AVR TX (FPGA RX)
+    output avr_rx,          // AVR RX (FPGA TX)
+    input avr_rx_busy,      // AVR RX buffer full
+    output io_led[3][8],
+    input io_button[5],
+    input io_dip[3][8],
+    output io_seg[8],
+    output io_sel[4]
+  ) {
+  
+  sig rst;
+  
+  .clk(clk) {
+    reset_conditioner reset_cond;
+    button_conditioner next_state_button;
+    edge_detector next_state_edge(#RISE(1), #FALL(0));
+    button_conditioner prev_state_button;
+    edge_detector prev_state_edge(#RISE(1), #FALL(0));
+    button_conditioner test_state_button;
+    edge_detector test_state_edge(#RISE(1), #FALL(0));
+    
+    .rst(rst) {
+      fsm functions(#INIT(DEFAULT)) = {ADD, SUB, MUL, 
+        AND, OR, XOR, NAND, NOR, XNOR, INV, LDR, SHL, 
+        SHR, SRA, CMPEQ, CMPLT, CMPLE, DEFAULT, RUNTEST, ERROR};
+      multi_seven_seg seg;     
+      alu8 myAlu8;
+    }
+    
+    dff counter[27];  // counter to create time delay between states in automatic testing
+    dff t[1];         // determine if the it is in automatic testing mode (0 is off, 1 is on)
+  }
+
+  always {
+    // sychronize buttons to clock
+    reset_cond.in = ~rst_n;
+    rst = reset_cond.out;
+    next_state_button.in = io_button[4];
+    next_state_edge.in = next_state_button.out;
+    prev_state_button.in = io_button[3];
+    prev_state_edge.in = prev_state_button.out;
+    test_state_button.in = io_button[1];
+    test_state_edge.in = test_state_button.out;
+    
+    // set 7-segment displays to 8 (don't care) 
+    seg.values = {4h8, 4h8, 4h8, 4h8};
+    io_seg = ~seg.seg;
+    io_sel = ~seg.sel;
+
+    spi_miso = bz;          // not using SPI
+    spi_channel = bzzzz;    // not using flags
+    avr_rx = bz;            // not using serial port        
+    
+    // io_dip[2] controls inputs for a, and io_dip[1]
+    // controls inputs for b, displayed on io_led[2]
+    // io_led[1] respectively (nicely 8 LEDs, woohoo!)
+    
+    // connect inputs to dip switches    
+    myAlu8.a = $signed(io_dip[2]);
+    myAlu8.b = $signed(io_dip[1]);
+    myAlu8.alufn = 6b0;
+    
+    // connect dip switches to LEDs
+    io_led[2] = io_dip[2];
+    io_led[1] = io_dip[1];
+    
+    // io_led[0] displays the 8-bit ALU output, led[5:0] 
+    // (located on Mojo) displays the ALUFN signals, and 
+    // led[7] will indicate DEFAULT state
+    
+    // assign output LEDs, set default value to 0
+    io_led[0] = 8b0;
+    led = 8h00;
+    
+    // fsm will stay in the same state and counter will keep
+    // increasing unless otherwise specified
+    functions.d = functions.q;
+    counter.d = counter.q + 1;
+    
+    // enter the next or previous state by pressing the 
+    // right or left button respectively, or start self-test
+    // by pressing the center button
+    
+    // manual testing block
+    if (t.q == 0) {
+      case (functions.q) {
+        functions.ADD:
+          if (prev_state_edge.out) functions.d = functions.DEFAULT;
+          if (next_state_edge.out) functions.d = functions.SUB; 
+        functions.SUB:
+          if (prev_state_edge.out) functions.d = functions.ADD;
+          if (next_state_edge.out) functions.d = functions.MUL;
+        functions.MUL:
+          if (prev_state_edge.out) functions.d = functions.SUB;
+          if (next_state_edge.out) functions.d = functions.AND;
+        functions.AND:  
+          if (prev_state_edge.out) functions.d = functions.MUL;
+          if (next_state_edge.out) functions.d = functions.OR;
+        functions.OR:
+          if (prev_state_edge.out) functions.d = functions.AND;
+          if (next_state_edge.out) functions.d = functions.XOR;
+        functions.XOR:
+          if (prev_state_edge.out) functions.d = functions.OR;
+          if (next_state_edge.out) functions.d = functions.NAND;
+        functions.NAND:
+          if (prev_state_edge.out) functions.d = functions.XOR;
+          if (next_state_edge.out) functions.d = functions.NOR;
+        functions.NOR:
+          if (prev_state_edge.out) functions.d = functions.NAND;
+          if (next_state_edge.out) functions.d = functions.XNOR;
+        functions.XNOR:
+          if (prev_state_edge.out) functions.d = functions.NOR;
+          if (next_state_edge.out) functions.d = functions.INV;
+        functions.INV:
+          if (prev_state_edge.out) functions.d = functions.XNOR;
+          if (next_state_edge.out) functions.d = functions.LDR;
+        functions.LDR:
+          if (prev_state_edge.out) functions.d = functions.INV;
+          if (next_state_edge.out) functions.d = functions.SHL;
+        functions.SHL:
+          if (prev_state_edge.out) functions.d = functions.LDR;
+          if (next_state_edge.out) functions.d = functions.SHR;
+        functions.SHR:
+          if (prev_state_edge.out) functions.d = functions.SHL;
+          if (next_state_edge.out) functions.d = functions.SRA;
+        functions.SRA:
+          if (prev_state_edge.out) functions.d = functions.SHR;
+          if (next_state_edge.out) functions.d = functions.CMPEQ;
+        functions.CMPEQ:
+          if (prev_state_edge.out) functions.d = functions.SRA;
+          if (next_state_edge.out) functions.d = functions.CMPLT;
+        functions.CMPLT:
+          if (prev_state_edge.out) functions.d = functions.CMPEQ;
+          if (next_state_edge.out) functions.d = functions.CMPLE;
+        functions.CMPLE:
+          if (prev_state_edge.out) functions.d = functions.CMPLT;
+          if (next_state_edge.out) functions.d = functions.DEFAULT;
+        functions.DEFAULT:
+          if (prev_state_edge.out) functions.d = functions.CMPLE;
+          if (next_state_edge.out) functions.d = functions.ADD;
+          if (test_state_edge.out) functions.d = functions.RUNTEST;
+        functions.RUNTEST:
+          functions.d = functions.ADD;
+      }
+    }
+    
+    // self-testing block with predefined test cases
+    if (t.q == 1) {
+      case (functions.q) {
+        functions.ADD:
+          if (counter.q[26] == 1) {
+            counter.d = 0;                                        // reset counter to create time delay
+            myAlu8.a = 8b10000001;
+            myAlu8.b = 8b10000000;
+            if (myAlu8.alu == 8b00000001 && myAlu8.v == 1b1) {
+              functions.d = functions.SUB;
+            } else {
+              functions.d = functions.ERROR;
+            }
+          }
+        functions.SUB:
+          if (counter.q[26] == 1) {
+            counter.d = 0;
+            myAlu8.a = 8b00001111;
+            myAlu8.b = 8b00001111;
+            if (myAlu8.alu == 8b00000000 && myAlu8.z == 1b1) {
+              functions.d = functions.MUL;
+            } else {
+              functions.d = functions.ERROR;
+            }
+          }
+        functions.MUL:
+          if (counter.q[26] == 1) {
+            counter.d = 0;
+            myAlu8.a = 8b10000001;
+            myAlu8.b = 8b00000001;
+            if (myAlu8.alu == 8b10000001 && myAlu8.n == 1b1) {
+              functions.d = functions.AND;
+            } else {
+              functions.d = functions.ERROR;
+            }
+          }
+        functions.AND:  
+          if (counter.q[26] == 1) {
+            counter.d = 0;
+            myAlu8.a = 8b00001111;
+            myAlu8.b = 8b00000100;
+            if (myAlu8.alu == 8b00000100) {
+              functions.d = functions.OR; 
+            } else {
+              functions.d = functions.ERROR;
+            }
+          } 
+        functions.OR:
+          if (counter.q[26] == 1) {
+            counter.d = 0;
+            myAlu8.a = 8b00001111;
+            myAlu8.b = 8b00000100;
+            if (myAlu8.alu == 8b00001111) {
+              functions.d = functions.XOR;
+            } else {
+              functions.d = functions.ERROR;
+            }
+          } 
+        functions.XOR:
+          if (counter.q[26] == 1) {
+            counter.d = 0;
+            myAlu8.a = 8b00001111;
+            myAlu8.b = 8b00000100;
+            if (myAlu8.alu == 8b00001011) {
+              functions.d = functions.NAND;
+            } else {
+              functions.d = functions.ERROR;
+            }
+          } 
+        functions.NAND:
+          if (counter.q[26] == 1) {
+            counter.d = 0;
+            myAlu8.a = 8b00001111;
+            myAlu8.b = 8b00000100;
+            if (myAlu8.alu == 8b11111011) {
+              functions.d = functions.NOR;
+            } else {
+              functions.d = functions.ERROR;
+            }
+          } 
+        functions.NOR:
+          if (counter.q[26] == 1) {
+            counter.d = 0;
+            myAlu8.a = 8b00001111;
+            myAlu8.b = 8b00000100;
+            if (myAlu8.alu == 8b11110000) {
+              functions.d = functions.XNOR;
+            } else {
+              functions.d = functions.ERROR;
+            }
+          } 
+        functions.XNOR:
+          if (counter.q[26] == 1) {
+            counter.d = 0;
+            myAlu8.a = 8b00001111;
+            myAlu8.b = 8b00000100;
+            if (myAlu8.alu == 8b11110100) {
+              functions.d = functions.INV;
+            } else {
+              functions.d = functions.ERROR;
+            }
+          } 
+        functions.INV:
+          if (counter.q[26] == 1) {
+            counter.d = 0;
+            myAlu8.a = 8b00001111;
+            myAlu8.b = 8b00000100;
+            if (myAlu8.alu == 8b11110000) {
+              functions.d = functions.LDR;
+            } else {
+              functions.d = functions.ERROR;
+            }
+          } 
+        functions.LDR:
+          if (counter.q[26] == 1) {
+            counter.d = 0;
+            myAlu8.a = 8b00001111;
+            myAlu8.b = 8b00000100;
+            if (myAlu8.alu == 8b00001111) {
+              functions.d = functions.SHL;
+            } else {
+              functions.d = functions.ERROR;
+            }
+          } 
+        functions.SHL:
+          if (counter.q[26] == 1) {
+            counter.d = 0;
+            myAlu8.a = 8b00001111;
+            myAlu8.b = 8b00000011;
+            if (myAlu8.alu == 8b01111000) {
+              functions.d = functions.SHR;
+            } else {
+              functions.d = functions.ERROR;
+            }
+          } 
+        functions.SHR:
+          if (counter.q[26] == 1) {
+            counter.d = 0;
+            myAlu8.a = 8b00001111;
+            myAlu8.b = 8b00000011;
+            if (myAlu8.alu == 8b00000001) {
+              functions.d = functions.SRA;
+            } else {
+              functions.d = functions.ERROR;
+            }
+          } 
+        functions.SRA:
+          if (counter.q[26] == 1) {
+            counter.d = 0;
+            myAlu8.a = 8b10110001;
+            myAlu8.b = 8b00000011;
+            if (myAlu8.alu == 8b11110110) {
+              functions.d = functions.CMPEQ;
+            } else {
+              functions.d = functions.ERROR;
+            }
+          } 
+        functions.CMPEQ:
+          if (counter.q[26] == 1) {
+            counter.d = 0;
+            myAlu8.a = 8b00000011;
+            myAlu8.b = 8b00001111;
+            if (myAlu8.alu[0] == 1b0) {            
+              functions.d = functions.CMPLT;
+            } else {
+              functions.d = functions.ERROR;
+            }              
+          } 
+        functions.CMPLT:
+          if (counter.q[26] == 1) {
+            counter.d = 0;
+            myAlu8.a = 8b00000011;
+            myAlu8.b = 8b00001111;
+            if (myAlu8.alu[0] == 1b1) {
+              functions.d = functions.CMPLE;
+            } else {
+              functions.d = functions.ERROR;
+            }
+          } 
+        functions.CMPLE:
+          if (counter.q[26] == 1) {
+            counter.d = 0;
+            myAlu8.a = 8b00000011;
+            myAlu8.b = 8b00001111;
+            if (myAlu8.alu[0] == 1b1) {
+              functions.d = functions.DEFAULT;
+            } else {
+              functions.d = functions.ERROR;
+            }
+          } 
+        functions.ERROR:
+          if (test_state_edge.out) functions.d = functions.DEFAULT;
+      }
+    }
+    
+    // determine the state inputs and outputs, i.e. set 
+    // correct ALUFN signals for operation, display
+    // on LEDs accordingly
+    case (functions.q) {
+      functions.DEFAULT:
+        seg.values = {4h8, 4h8, 4h8, 4h8};  // reset z, v, and n to 8 (don't care)
+        myAlu8.alufn = 6b000000;
+        io_led[0] = 8b0;
+        led[7] = 1;
+        t.d = 0;                            // reset t to 0 (test not running)    
+      functions.ADD:
+        myAlu8.alufn = 6b000000;
+        io_led[0] = myAlu8.alu;
+        led[5:0] = 6b000000;
+        seg.values[2] = 4h0 + myAlu8.z;     // set 7-segment display
+        seg.values[1] = 4h0 + myAlu8.v;
+        seg.values[0] = 4h0 + myAlu8.n;
+      functions.SUB: 
+        myAlu8.alufn = 6b000001;
+        io_led[0] = myAlu8.alu;
+        led[5:0] = 6b000001;
+        seg.values[2] = 4h0 + myAlu8.z;
+        seg.values[1] = 4h0 + myAlu8.v;
+        seg.values[0] = 4h0 + myAlu8.n;
+      functions.MUL:
+        myAlu8.alufn = 6b000010;
+        io_led[0] = myAlu8.alu;
+        led[5:0] = 6b000010;
+        seg.values[2] = 4h0 + myAlu8.z;
+        seg.values[1] = 4h0 + myAlu8.v;
+        seg.values[0] = 4h0 + myAlu8.n;
+      functions.AND:
+        seg.values = {4h8, 4h8, 4h8, 4h8};  
+        myAlu8.alufn = 6b011000;
+        io_led[0] = myAlu8.alu;
+        led[5:0] = 6b011000;
+      functions.OR: 
+        myAlu8.alufn = 6b011110;
+        io_led[0] = myAlu8.alu;
+        led[5:0] = 6b011110;
+      functions.XOR: 
+        myAlu8.alufn = 6b010110;
+        io_led[0] = myAlu8.alu;
+        led[5:0] = 6b010110;
+      functions.NAND:
+        myAlu8.alufn = 6b010111;
+        io_led[0] = myAlu8.alu;
+        led[5:0] = 6b010111;
+      functions.NOR:
+        myAlu8.alufn = 6b010001;
+        io_led[0] = myAlu8.alu;
+        led[5:0] = 6b010001;
+      functions.XNOR:
+        myAlu8.alufn = 6b011001;
+        io_led[0] = myAlu8.alu;
+        led[5:0] = 6b011001;
+      functions.INV:
+        myAlu8.alufn = 6b010101;
+        io_led[0] = myAlu8.alu;
+        led[5:0] = 6b010101;
+      functions.LDR: 
+        myAlu8.alufn = 6b011010;
+        io_led[0] = myAlu8.alu;
+        led[5:0] = 6b011010;
+      functions.SHL: 
+        myAlu8.alufn = 6b100000;
+        io_led[0] = myAlu8.alu;
+        led[5:0] = 6b100000;
+      functions.SHR: 
+        myAlu8.alufn = 6b100001;
+        io_led[0] = myAlu8.alu;
+        led[5:0] = 6b100001;
+      functions.SRA:
+        seg.values = {4h8, 4h8, 4h8, 4h8}; 
+        myAlu8.alufn = 6b100011;
+        io_led[0] = myAlu8.alu;
+        led[5:0] = 6b100011;
+      functions.CMPEQ:
+        myAlu8.alufn = 6b110011;
+        io_led[0] = myAlu8.alu;
+        led[5:0] = 6b110011;
+        seg.values[2] = 4h0 + myAlu8.z;
+        seg.values[1] = 4h0 + myAlu8.v;
+        seg.values[0] = 4h0 + myAlu8.n;
+      functions.CMPLT:
+        myAlu8.alufn = 6b110101;
+        io_led[0] = myAlu8.alu;
+        led[5:0] = 6b110101;
+        seg.values[2] = 4h0 + myAlu8.z;
+        seg.values[1] = 4h0 + myAlu8.v;
+        seg.values[0] = 4h0 + myAlu8.n;
+      functions.CMPLE:
+        myAlu8.alufn = 6b110111;
+        io_led[0] = myAlu8.alu;
+        led[5:0] = 6b110111;
+        seg.values[2] = 4h0 + myAlu8.z;
+        seg.values[1] = 4h0 + myAlu8.v;
+        seg.values[0] = 4h0 + myAlu8.n;
+      functions.RUNTEST:
+        counter.d = 0;
+        t.d = 1;                            
+      functions.ERROR:
+        seg.values = {4h3, 4h3, 4h3, 4h3};      
+    }
+  }
+}

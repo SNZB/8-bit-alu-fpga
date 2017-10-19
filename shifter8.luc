@@ -1,0 +1,20 @@
+module shifter8 (
+    input clk,       // clock
+    input rst,       // reset
+    input a[8],      // 8-bit A0 - A7 inputs
+    input b[8],      // 8-bit B0 - B7 inputs
+    input alufn[2],  // ALUFN[1:0] signals
+    output shift[8]  // final 8-bit output
+  ) {
+  
+  always {
+    shift = 8b0;
+    
+    // low-order 3 bits of b used as the shift count, i.e. max shift = 4 bits
+    case (alufn) {
+      2b00: shift = $signed(a) << b[2:0];   // shift left
+      2b01: shift = $signed(a) >> b[2:0];   // shift right
+      2b11: shift = $signed(a) >>> b[2:0];  // shift right with sign extension
+    }
+  }
+}

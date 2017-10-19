@@ -1,0 +1,62 @@
+module alu8 (
+    input clk,       // clock
+    input rst,       // reset
+    input a[8],      // 8-bit A0 - A7
+    input b[8],      // 8-bit B0 - B7
+    input alufn[6],  // ALUFN0 - ALUFN5 signals
+    output alu[8],   // final ALU output
+    output z,        // zero
+    output v,        // overflow
+    output n         // negative
+  ) {
+  
+  .clk(clk) {
+    .rst(rst) {
+      adder8 myAdder;
+      boolean8 myBoolean;
+      shifter8 myShifter;
+      compare8 myCompare;
+    }
+  }
+  
+  always {
+    alu = 8b0;
+    
+    // assign inputs for modules
+    myAdder.a = $signed(a);
+    myAdder.b = $signed(b);
+    myAdder.alufn = alufn[1:0];
+    
+    myBoolean.a = $signed(a);
+    myBoolean.b = $signed(b);
+    myBoolean.alufn = alufn[3:0];
+    
+    myShifter.a = $signed(a);
+    myShifter.b = $signed(b);
+    myShifter.alufn = alufn[1:0];
+    
+    myCompare.a = $signed(a);
+    myCompare.b = $signed(b);
+    myCompare.alufn = alufn[2:1];
+    
+    // set z, v, and n to 0, will remain 0 if not required
+    z = 1b0;
+    v = 1b0;
+    n = 1b0;
+    
+    // select final ALU output based on ALUFN signals
+    case (alufn[5:4]) {
+      2b00:
+        alu = $signed(myAdder.s);
+        z = myAdder.z;
+        v = myAdder.v;
+        n = myAdder.n;
+      2b01:
+        alu = myBoolean.boole;
+      2b10:
+        alu = myShifter.shift;
+      2b11:
+        alu = myCompare.cmp;
+    }
+  }
+}

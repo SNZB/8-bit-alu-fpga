@@ -1,0 +1,7 @@
+In order to run this successfully, do the following:
+
+1) Add io_shield.ucf in your project constraints.
+2) Click Project > Add Components in your top bar and check Miscellaneous.
+3) Under Settings, select the correct Serial Port and ISE location.
+
+That's all!

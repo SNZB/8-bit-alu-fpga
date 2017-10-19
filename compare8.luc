@@ -1,0 +1,26 @@
+module compare8 (
+    input clk,       // clock
+    input rst,       // reset
+    input a[8],      // 8-bit A0 - A7 inputs
+    input b[8],      // 8-bit B0 - B7 inputs
+    input alufn[2],  // ALUFN[2:0] signals
+    output cmp[8]    // final 8-bit output
+  ) {
+  
+  adder8 newAdder(.clk(clk), .rst(rst));
+  
+  always {
+    cmp = 8b0;
+    
+    // use add to compute a - b
+    newAdder.a = $signed(a);
+    newAdder.b = $signed(b);
+    newAdder.alufn[1:0] = 2b01;
+    
+    case (alufn) {
+      2b01: cmp[0] = newAdder.z;                              // a == b
+      2b10: cmp[0] = newAdder.n ^ newAdder.v;                 // a < b
+      2b11: cmp[0] = (newAdder.n ^ newAdder.v) | newAdder.z;  // a <= b
+    }
+  }
+}
